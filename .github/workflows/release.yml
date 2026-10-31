@@ -1,0 +1,55 @@
+name: Build apps
+
+# Builds the IDE for Windows, macOS and Linux. Run it by pushing a tag like
+# v1.0.0 (the apps are attached to a GitHub release) or by hand from the
+# Actions tab (the apps are attached to the workflow run).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: OpenBASIC-Windows
+          - os: macos-latest
+            artifact: OpenBASIC-macOS
+          - os: ubuntu-22.04
+            artifact: OpenBASIC-Linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Qt system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - run: pip install PySide6 pyinstaller pillow
+      - run: python build.py
+        env:
+          QT_QPA_PLATFORM: offscreen
+      - name: Zip (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/OpenBASIC.exe -DestinationPath ${{ matrix.artifact }}.zip
+      - name: Zip (macOS)
+        if: runner.os == 'macOS'
+        run: cd dist && ditto -c -k --keepParent OpenBASIC.app ../${{ matrix.artifact }}.zip
+      - name: Zip (Linux)
+        if: runner.os == 'Linux'
+        run: cd dist && zip ../${{ matrix.artifact }}.zip OpenBASIC
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ${{ matrix.artifact }}.zip

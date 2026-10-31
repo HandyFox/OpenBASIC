@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openbasic"
+version = "1.0.0"
+description = "Open source, cross-platform IDE that runs Just BASIC and Liberty BASIC style programs"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = ["PySide6>=6.5"]
+classifiers = [
+    "Programming Language :: BASIC",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Interpreters",
+    "Topic :: Education",
+]
+
+[project.optional-dependencies]
+standalone = ["pyinstaller>=6"]
+dev = ["pytest>=7", "pyinstaller>=6"]
+
+[project.gui-scripts]
+openbasic = "openbasic.__main__:main"
+
+[tool.setuptools]
+packages = ["openbasic", "openbasic.ide", "openbasic.runtime"]
+
+[tool.setuptools.package-data]
+openbasic = ["examples/*.bas"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
