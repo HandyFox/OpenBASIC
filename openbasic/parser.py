@@ -146,8 +146,8 @@ class Parser:
             self.err("Expected a variable name")
         target = self.lvalue()
         if not self.accept_op("="):
-            if target[0] == "var" and self.at_end():
-                self.err(f"Unknown statement '{t.v}'")
+            if target[0] == "var":
+                self.err(f"Unknown statement '{t.v}' (OpenBASIC doesn't support it yet, or it's misspelled)", t)
             self.err("Expected '='")
         e = self.expr()
         return S("assign", line, target=target, expr=e)
@@ -331,7 +331,52 @@ class Parser:
         var = None
         if self.peek().k == "id" and not self.peek().is_id("else"):
             var = self.next().v
-        return S("next", line, var=var)
+        nexts = [S("next", line, var=var)]
+        while self.accept_op(","):  # NEXT j, i closes two loops
+            t = self.next()
+            if t.k != "id":
+                self.err("Expected a loop variable after ','", t)
+            nexts.append(S("next", line, var=t.v))
+        return nexts[0] if len(nexts) == 1 else S("multi", line, stmts=nexts)
+
+    def st_mainwin(self, line):
+        args = []  # MAINWIN columns rows (commas optional)
+        while not self.at_end():
+            args.append(self.expr())
+            self.accept_op(",")
+        return S("mainwin", line, args=args)
+
+    def st_titlebar(self, line):
+        return S("titlebar", line, expr=self.expr())
+
+    def st_dump(self, line):
+        return None
+
+    def st_printerdialog(self, line):
+        return None
+
+    def st_on(self, line):
+        if self.accept_id("error"):
+            self.expect_id("goto")
+            t = self.peek()
+            if t.k == "num":
+                self.next()
+                return S("onerror", line, label=None)
+            return S("onerror", line, label=self.label_target())
+        e = self.expr()
+        t = self.next()
+        if not (t.is_id("goto") or t.is_id("gosub")):
+            self.err("Expected GOTO or GOSUB after ON expression", t)
+        labels = [self.label_target()]
+        while self.accept_op(","):
+            labels.append(self.label_target())
+        return S("ongoto", line, expr=e, gosub=t.v.lower() == "gosub", labels=labels)
+
+    def st_struct(self, line):
+        self.err("STRUCT is a Liberty BASIC feature OpenBASIC doesn't support yet")
+
+    def st_callback(self, line):
+        self.err("CALLBACK is a Liberty BASIC feature OpenBASIC doesn't support yet")
 
     def st_while(self, line):
         return S("while", line, cond=self.expr())

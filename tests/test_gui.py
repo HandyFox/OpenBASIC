@@ -91,3 +91,30 @@ def test_runtime_error_reports_line():
     open(p, "w").write("nomainwin\nx = 1\ny = x / 0\n")
     r, _ = run(p, [])
     assert r.status == "error" and r.line == 3 and "Division by zero" in r.error
+
+
+def test_old_style_window_input(tmp_path):
+    """Liberty BASIC 1.x style: query then INPUT #handle, and INPUT #window as an event wait."""
+    p = tmp_path / "old.bas"
+    p.write_text('''nomainwin
+textbox #w.tb, 10, 10, 100, 25
+button #w.b, "Go", [go], UL, 10, 50
+open "Old style" for window as #w
+h$ = "#w"
+print #h$.tb, "hello there"
+print #w.tb, "!contents?"
+input #w.tb, got$
+open "out.txt" for output as #f
+print #f, got$
+[loop]
+input #w, r$
+goto [loop]
+[go]
+print #f, "clicked"
+close #f
+close #w
+end
+''')
+    r, _ = run(str(p), [(300, lambda h: h.controls["#w.b"].widget.click())])
+    assert r.status == "ended", r.error
+    assert (tmp_path / "out.txt").read_text().split() == ["hello", "there", "clicked"]

@@ -312,3 +312,27 @@ def test_examples_compile():
     for f in os.listdir(ex):
         if f.endswith(".bas"):
             Interpreter(open(os.path.join(ex, f)).read(), TestHost(), os.path.join(ex, f))
+
+
+def test_mainwin_onerror_ongoto_multinext_wincon():
+    src = '''
+mainwin 80 25
+on error goto [oops]
+x = 1 / 0
+[oops]
+print "caught: "; Err$
+for i = 1 to 2 : for j = 1 to 2 : print i; j; " "; : next j, i
+print
+k = 2 : on k gosub [a], [b]
+print _MB_YESNO; " "; trailing.dot. + 1
+end
+[a] print "A" : return
+[b] print "B" : return
+'''
+    assert out(src) == "caught: Division by zero\n11 12 21 22 \nB\n4 1\n"
+
+
+def test_unknown_statement_message():
+    with pytest.raises(BasicSyntaxError) as e:
+        Interpreter("frobnicate 1, 2", TestHost())
+    assert "Unknown statement 'frobnicate'" in e.value.msg

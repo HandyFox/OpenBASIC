@@ -123,6 +123,8 @@ class Interpreter:
         self.current_line = 0
         self.mainwin = True
         self.dll_handles = {}
+        self.gui_replies = {}
+        self.error_label = None
         self.ended = False
         self._init_sysvars(argv)
         self.compile()
@@ -459,16 +461,18 @@ class Interpreter:
 
     def chandle(self, node):
         name = node[1]
-        if name.endswith("$"):
-            getter = self.cvar_get(name[1:])
+        if "$" in name:
+            # #handle$ or #handle$.extension: the handle comes from a string variable
+            var, ext = name[1:name.index("$") + 1], name[name.index("$") + 1:]
+            getter = self.cvar_get(var)
 
             def dyn(fr):
                 s = str(getter(fr)).strip()
                 if not s:
-                    raise BasicError(f"Handle variable {name[1:]} is empty")
+                    raise BasicError(f"Handle variable {var} is empty")
                 if not s.startswith("#"):
                     s = "#" + s
-                return s.lower()
+                return (s + ext).lower()
             return dyn
         key = name.lower()
         return lambda fr: key
@@ -638,10 +642,16 @@ class Interpreter:
     def gui_command(self, fr, key, text, newline=True):
         if not self.host.is_gui_handle(key):
             raise BasicError(f"Handle {key} is not open")
+        text = _add_reply_slots(text)
         result = self.host.gui_print(key, text, newline)
         if result:
             for name, v in result.items():
-                self.set_var_dynamic(fr, name, v)
+                if name.startswith("__reply"):
+                    # answer to a query like "!contents?" without a variable;
+                    # the program reads it with INPUT #handle, var$
+                    self.gui_replies.setdefault(key, []).append(v)
+                else:
+                    self.set_var_dynamic(fr, name, v)
 
     def c_lprint(self, st):
         st2 = S("print", st.line, handle=None, items=st.items)
@@ -657,8 +667,15 @@ class Interpreter:
                 key = h(fr)
                 f = interp.files.get(key)
                 if f is None:
-                    if interp.host.is_gui_handle(key):
-                        raise BasicError(f"Use print {key}, \"!contents? var$\" to read from a window")
+                    if interp.host.is_gui_handle(key) or key in interp.gui_replies:
+                        replies = interp.gui_replies.get(key)
+                        if not replies:
+                            # Old-style event loop: INPUT #window, r$ waits for events
+                            return interp.do_wait(fr)
+                        for s, is_str in setters:
+                            v = replies.pop(0) if replies else ("" if is_str else 0)
+                            s(fr, v if is_str == isinstance(v, str) else (to_str(v) if is_str else val(v)))
+                        return None
                     raise BasicError(f"File {key} is not open")
                 for s, is_str in setters:
                     item = f.read_line() if st.whole_line else f.read_item()
@@ -966,6 +983,57 @@ class Interpreter:
             # RETURN without GOSUB: Just BASIC stops with an error. We treat it
             # like WAIT so event-driven programs keep working.
             return interp.do_wait(fr)
+        self.emit(op, st.line)
+
+    def c_multi(self, st):
+        for sub in st.stmts:
+            self._stmt(sub)
+
+    def c_mainwin(self, st):
+        args = [self.cexpr(a) for a in st.args]
+        interp = self
+
+        def op(fr):
+            vals = [int(_num(a(fr), "MAINWIN size")) for a in args]
+            if len(vals) >= 2 and hasattr(interp.host, "mainwin_size"):
+                interp.host.mainwin_size(vals[0], vals[1])
+        self.emit(op, st.line)
+
+    def c_titlebar(self, st):
+        e = self.cexpr(st.expr)
+        interp = self
+
+        def op(fr):
+            if hasattr(interp.host, "set_console_title"):
+                interp.host.set_console_title(to_str(e(fr)))
+        self.emit(op, st.line)
+
+    def c_onerror(self, st):
+        interp = self
+        label = st.label
+        if label:
+            self.pending_labels.append((label, st.line))
+        unit = self.cu
+
+        def op(fr):
+            interp.error_label = (unit, label) if label else None
+        self.emit(op, st.line)
+
+    def c_ongoto(self, st):
+        e = self.cexpr(st.expr)
+        labels = self.cu.labels
+        names = st.labels
+        for n in names:
+            self.pending_labels.append((n, st.line))
+        gosub = st.gosub
+
+        def op(fr):
+            i = int(_num(e(fr), "ON"))
+            if 1 <= i <= len(names):
+                if gosub:
+                    fr.gosub.append(fr.pc)
+                return labels[names[i - 1]]
+            return None
         self.emit(op, st.line)
 
     def c_end(self, st):
@@ -1661,6 +1729,18 @@ class Interpreter:
         host = self.host
         dbg = self.debugger
         count = 0
+        while True:
+            try:
+                return self._run_ops(fr, code, n, host, dbg, count)
+            except BasicError as e:
+                trap = self.error_label
+                if trap is None or trap[0] is not fr.unit or trap[1] not in fr.unit.labels:
+                    raise
+                self.gvars["Err$"] = e.msg
+                self.gvars["Err"] = 1
+                fr.pc = fr.unit.labels[trap[1]]
+
+    def _run_ops(self, fr, code, n, host, dbg, count):
         try:
             while True:
                 pc = fr.pc
@@ -1759,6 +1839,35 @@ def _not(v):
         raise BasicError("NOT needs a number")
     # Logical NOT: Just BASIC's bitwise NOT made "not(1 = 1)" true, a classic gotcha.
     return -1 if v == 0 else 0
+
+
+# Queries that old programs send without variable names, answering with INPUT #handle:
+# command -> (fixed arguments before the variable names, number of variables, needs '!')
+_QUERIES = {
+    "contents?": (0, 1, False), "selection?": (0, 1, False), "selectindex?": (0, 1, False),
+    "value?": (0, 1, False), "modified?": (0, 1, True), "origin?": (0, 2, True),
+    "lines": (0, 1, True), "line": (1, 1, True), "posxy": (0, 2, False), "spritexy?": (1, 2, False),
+    "spritevisible?": (1, 1, False), "spritescale?": (1, 1, False), "spriteorient?": (1, 1, False),
+    "spritecollides": (1, 1, False), "segment": (0, 1, False),
+}
+
+
+def _add_reply_slots(text):
+    t = text.strip()
+    if ";" in t or not t:
+        return text
+    bang = t.startswith("!")
+    words = (t[1:] if bang else t).split()
+    if not words:
+        return text
+    q = _QUERIES.get(words[0].lower())
+    if q is None or (q[2] and not bang):
+        return text
+    fixed, nvars, _ = q
+    have = len(words) - 1 - fixed
+    if have >= nvars or have < 0:
+        return text
+    return t + "".join(f" __reply{i}" for i in range(have, nvars))
 
 
 def _sort_key(v):

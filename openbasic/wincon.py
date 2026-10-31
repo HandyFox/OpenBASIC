@@ -1,0 +1,52 @@
+"""Windows API constants (_WS_VISIBLE, _MB_OK, ...) used by Liberty BASIC programs.
+
+Unknown constants read as 0, which is harmless for STYLEBITS and the emulated
+CALLDLL calls.
+"""
+WINCON = {
+    # window styles
+    "_WS_OVERLAPPED": 0x00000000, "_WS_POPUP": 0x80000000, "_WS_CHILD": 0x40000000,
+    "_WS_MINIMIZE": 0x20000000, "_WS_VISIBLE": 0x10000000, "_WS_DISABLED": 0x08000000,
+    "_WS_CLIPSIBLINGS": 0x04000000, "_WS_CLIPCHILDREN": 0x02000000, "_WS_MAXIMIZE": 0x01000000,
+    "_WS_CAPTION": 0x00C00000, "_WS_BORDER": 0x00800000, "_WS_DLGFRAME": 0x00400000,
+    "_WS_VSCROLL": 0x00200000, "_WS_HSCROLL": 0x00100000, "_WS_SYSMENU": 0x00080000,
+    "_WS_THICKFRAME": 0x00040000, "_WS_GROUP": 0x00020000, "_WS_TABSTOP": 0x00010000,
+    "_WS_MINIMIZEBOX": 0x00020000, "_WS_MAXIMIZEBOX": 0x00010000,
+    "_WS_EX_TOPMOST": 0x8, "_WS_EX_CLIENTEDGE": 0x200, "_WS_EX_TOOLWINDOW": 0x80,
+    "_ES_LEFT": 0, "_ES_CENTER": 1, "_ES_RIGHT": 2, "_ES_MULTILINE": 4, "_ES_UPPERCASE": 8,
+    "_ES_LOWERCASE": 16, "_ES_PASSWORD": 32, "_ES_AUTOVSCROLL": 64, "_ES_AUTOHSCROLL": 128,
+    "_ES_NOHIDESEL": 256, "_ES_READONLY": 2048, "_ES_NUMBER": 8192,
+    "_SS_LEFT": 0, "_SS_CENTER": 1, "_SS_RIGHT": 2, "_SS_SUNKEN": 4096,
+    "_BS_MULTILINE": 0x2000, "_BS_FLAT": 0x8000,
+    "_LBS_SORT": 2, "_LBS_MULTIPLESEL": 8, "_CBS_SORT": 0x100,
+    # message boxes
+    "_MB_OK": 0, "_MB_OKCANCEL": 1, "_MB_ABORTRETRYIGNORE": 2, "_MB_YESNOCANCEL": 3, "_MB_YESNO": 4,
+    "_MB_RETRYCANCEL": 5, "_MB_ICONHAND": 0x10, "_MB_ICONSTOP": 0x10, "_MB_ICONERROR": 0x10,
+    "_MB_ICONQUESTION": 0x20, "_MB_ICONEXCLAMATION": 0x30, "_MB_ICONWARNING": 0x30,
+    "_MB_ICONASTERISK": 0x40, "_MB_ICONINFORMATION": 0x40, "_MB_DEFBUTTON2": 0x100,
+    "_MB_SYSTEMMODAL": 0x1000, "_MB_TOPMOST": 0x40000,
+    "_IDOK": 1, "_IDCANCEL": 2, "_IDABORT": 3, "_IDRETRY": 4, "_IDIGNORE": 5, "_IDYES": 6, "_IDNO": 7,
+    # show window
+    "_SW_HIDE": 0, "_SW_SHOWNORMAL": 1, "_SW_NORMAL": 1, "_SW_SHOWMINIMIZED": 2, "_SW_SHOWMAXIMIZED": 3,
+    "_SW_MAXIMIZE": 3, "_SW_SHOW": 5, "_SW_MINIMIZE": 6, "_SW_RESTORE": 9,
+    # system metrics
+    "_SM_CXSCREEN": 0, "_SM_CYSCREEN": 1,
+    # sounds
+    "_SND_SYNC": 0, "_SND_ASYNC": 1, "_SND_NODEFAULT": 2, "_SND_LOOP": 8, "_SND_FILENAME": 0x20000,
+    # virtual keys
+    "_VK_LBUTTON": 1, "_VK_RBUTTON": 2, "_VK_MBUTTON": 4, "_VK_BACK": 8, "_VK_TAB": 9,
+    "_VK_RETURN": 13, "_VK_SHIFT": 16, "_VK_CONTROL": 17, "_VK_MENU": 18, "_VK_PAUSE": 19,
+    "_VK_CAPITAL": 20, "_VK_ESCAPE": 27, "_VK_SPACE": 32, "_VK_PRIOR": 33, "_VK_NEXT": 34,
+    "_VK_END": 35, "_VK_HOME": 36, "_VK_LEFT": 37, "_VK_UP": 38, "_VK_RIGHT": 39, "_VK_DOWN": 40,
+    "_VK_INSERT": 45, "_VK_DELETE": 46,
+    # misc
+    "_TRUE": 1, "_FALSE": 0, "_NULL": 0, "_MAX_PATH": 260,
+}
+for _i in range(12):
+    WINCON[f"_VK_F{_i + 1}"] = 112 + _i
+for _c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+    WINCON[f"_VK_{_c}"] = ord(_c)
+
+
+def value(name):
+    return WINCON.get(name.upper(), 0)

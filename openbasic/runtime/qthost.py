@@ -91,6 +91,18 @@ class QtHost(Host):
         if self.console and not self.console.edit.toPlainText():
             self.console.hide()
 
+    def mainwin_size(self, cols, rows):
+        from PySide6.QtGui import QFontMetrics
+        con = self.console or ConsoleWindow(self, f"{self.program_name} - OpenBASIC")
+        self.console = con
+        fm = QFontMetrics(con.edit.font())
+        con.resize(fm.horizontalAdvance("M") * max(10, cols) + 30, fm.lineSpacing() * max(3, rows) + 20)
+
+    def set_console_title(self, title):
+        con = self.console or ConsoleWindow(self, title)
+        self.console = con
+        con.setWindowTitle(title)
+
     def console_closed(self):
         self.end_flag = True
         self._quit_loops()

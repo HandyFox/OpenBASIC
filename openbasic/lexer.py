@@ -25,7 +25,8 @@ class Tok:
 
 _ID = re.compile(r"[A-Za-z][A-Za-z0-9_.]*\$?")
 _NUM = re.compile(r"(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?")
-_HANDLE = re.compile(r"#([A-Za-z][A-Za-z0-9_.]*\$?|\d+)")
+_HANDLE = re.compile(r"#([A-Za-z][A-Za-z0-9_.]*\$(?:\.[A-Za-z0-9_.]+)?|[A-Za-z][A-Za-z0-9_.]*|\d+)")
+_WINCON = re.compile(r"_[A-Za-z][A-Za-z0-9_]*")
 _LABEL = re.compile(r"\[([^\]\s\[]+)\]")
 _HEX = re.compile(r"&[hH]([0-9A-Fa-f]+)")
 _TWO = ("<=", ">=", "<>", "=<", "=>", "><")
@@ -61,7 +62,16 @@ def tokenize(src):
                 stmt_start = False
                 line_had_tokens = True
                 continue
-            if c == "_" and text[i + 1:].strip() == "" :
+            if c == "_" and i + 1 < n and text[i + 1].isalpha():
+                # Windows API constant such as _WS_VISIBLE
+                from .wincon import value as wincon_value
+                m = _WINCON.match(text, i)
+                toks.append(Tok("num", wincon_value(m.group(0)), ln, i))
+                i = m.end()
+                stmt_start = False
+                line_had_tokens = True
+                continue
+            if c == "_" and (text[i + 1:].strip() == "" or text[i + 1:].lstrip().startswith("'")):
                 # line continuation
                 continued = True
                 i = n
@@ -107,9 +117,6 @@ def tokenize(src):
             if c.isalpha():
                 m = _ID.match(text, i)
                 word = m.group(0)
-                # don't swallow a trailing '.' that isn't part of a name
-                if word.endswith(".") and not word.endswith("$"):
-                    word = word.rstrip(".") or word
                 if stmt_start and word.lower() == "rem":
                     i = n
                     break
