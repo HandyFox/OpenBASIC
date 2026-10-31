@@ -270,7 +270,11 @@ def _date(interp, fr, *a):
     now = datetime.date.today()
     if not a:
         return now.strftime("%b %d, %Y")
-    fmt = _s(a[0], "date$").strip()
+    if not isinstance(a[0], str):
+        # date$(days): days since Jan 1, 1901 -> "mm/dd/yyyy"
+        d = datetime.date(1901, 1, 1) + datetime.timedelta(days=int(a[0]))
+        return d.strftime("%m/%d/%Y")
+    fmt = a[0].strip()
     low = fmt.lower()
     if low == "mm/dd/yyyy":
         return now.strftime("%m/%d/%Y")

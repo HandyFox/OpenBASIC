@@ -82,8 +82,12 @@ once. The ready-made IDE apps use themselves as the runtime, so builds are insta
 
 ## Compatibility notes
 
-OpenBASIC follows Just BASIC 1.0/2.0 and many Liberty BASIC 4 additions. A few long-standing
-quirks are fixed on purpose:
+OpenBASIC follows Just BASIC 1.0/2.0 and many Liberty BASIC 4 additions. All 94 example and
+tutorial programs that ship with Just BASIC 2.0 (including the FreeForm-J designer itself)
+compile and run. To check a folder of your own programs:
+`python tools/run_corpus.py path/to/folder --shots shots`.
+
+A few long-standing quirks are fixed on purpose:
 
 - `not(1 = 1)` is false (Just BASIC's bitwise NOT made it true).
 - `RETURN` reached without a `GOSUB` waits for events instead of stopping with an error.
@@ -101,6 +105,10 @@ quirks are fixed on purpose:
 `GetSystemMetrics`, `GetAsyncKeyState`/`GetKeyState` and `ShellExecuteA` everywhere; on Windows,
 other calls go to the real DLL. Windows font names map to similar fonts on each system.
 
+**Serial ports** (`open "COM1:9600,n,8,1" for random as #comm`) work when the optional
+`pyserial` package is installed. On macOS and Linux, COM1 is the first USB serial device, or set
+the `OPENBASIC_COM1` environment variable to a device such as `/dev/ttyUSB0`.
+
 **Not supported yet:** `STRUCT`, `CALLBACK`, printing to a printer (`LPRINT` prints to the
 console), and `.tkn` files (use the `.bas` source).
 
@@ -117,6 +125,7 @@ openbasic/
   ide/                     editor, debugger UI, FreeForm designer, packager
   examples/                sample programs (File > Open Example)
 tests/                     language tests and GUI tests (your programs are in tests/samples)
+tools/run_corpus.py        run a whole folder of programs and report failures
 ```
 
 Run the tests with `QT_QPA_PLATFORM=offscreen python -m pytest`.

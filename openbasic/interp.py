@@ -11,6 +11,7 @@ headless one.
 """
 import math
 import os
+import re
 import random
 import shutil
 import sys
@@ -244,6 +245,7 @@ class Interpreter:
         self.code = unit.code
         self.blocks = []
         self.pending_labels = []  # (name, line) gotos to verify
+        self.pending_handlers = []  # event handler labels (may be in the main program)
         for st in stmts:
             self._stmt(st)
         if self.blocks:
@@ -252,6 +254,9 @@ class Interpreter:
             raise BasicSyntaxError(f"{b['kind'].upper()} without {names[b['kind']]}", b["line"])
         if unit.kind != "main":
             self.emit(lambda fr: RETURN, unit.line, True)
+        for name, line in self.pending_handlers:
+            if name not in unit.labels and name not in self.main.labels:
+                raise BasicSyntaxError(f"Branch label [{name}] not found", line)
         for name, line in self.pending_labels:
             if name not in unit.labels:
                 where = "" if unit.kind == "main" else f" inside {unit.kind.upper()} {unit.name}"
@@ -301,6 +306,9 @@ class Interpreter:
             return self.cbin(node)
         if k == "call":
             return self.ccall(node)
+        if k == "concat":
+            parts = [self.cexpr(x) for x in node[1]]
+            return lambda fr: "".join(to_str(f(fr)) for f in parts)
         raise BasicError(f"Bad expression node {k}")
 
     def cbin(self, node):
@@ -1093,7 +1101,7 @@ class Interpreter:
         handler = st.handler
         interp = self
         if handler and handler[0] == "label":
-            self.pending_labels.append((handler[1], st.line))
+            self.pending_handlers.append((handler[1], st.line))
 
         def op(fr):
             interp.host.set_timer(_num(ms(fr), "TIMER"), handler)
@@ -1254,6 +1262,14 @@ class Interpreter:
             if not os.path.exists(real):
                 raise BasicError(f"Bitmap file not found: {path}")
             interp.host.load_bmp(to_str(n(fr)), real)
+        self.emit(op, st.line)
+
+    def c_bmpsave(self, st):
+        n, f = self.cexpr(st.name), self.cexpr(st.file)
+        interp = self
+
+        def op(fr):
+            interp.host.save_bmp(to_str(n(fr)), interp.resolve(to_str(f(fr)), must_exist=False))
         self.emit(op, st.line)
 
     def c_unloadbmp(self, st):
@@ -1418,6 +1434,12 @@ class Interpreter:
             if key in interp.files or interp.host.is_gui_handle(key):
                 raise BasicError(f"Handle {key} is already open")
             n = to_str(name(fr))
+            if mode in file_modes and re.match(r"^\s*COM\d+:", n, re.I):
+                from .serialport import open_serial
+                interp.files[key] = open_serial(key, n)
+                return
+            if mode in file_modes and not n.strip():
+                raise BasicError("OPEN needs a file name, but the name was empty")
             if mode in file_modes:
                 path = interp.resolve(n, must_exist=(mode == "input"))
                 interp.files[key] = BFile(key, path, mode, reclen(fr) if reclen else None)
@@ -1520,7 +1542,7 @@ class Interpreter:
         line = st.line
         for a in st.args:
             if a[0] == "label":
-                self.pending_labels.append((a[1], line))
+                self.pending_handlers.append((a[1], line))
 
         def op(fr):
             spec = interp.build_control(fr, ctype, h(fr), st.handle[1], args)
@@ -1580,14 +1602,15 @@ class Interpreter:
 
         spec = {"type": ctype, "handle": key, "raw": raw_handle}
         if ctype == "menu":
-            title = value(take("e"))
+            ta = take("e")
+            title = ta[1][1] if (ta and ta[0] == "e" and ta[1][0] == "var") else value(ta)
             items = []
             while pos < len(args):
                 a = take("e")
                 if a[0] == "sep":
                     items.append(None)
                     continue
-                text = value(a)
+                text = a[1][1] if (a[0] == "e" and a[1][0] == "var") else value(a)
                 hd = handler(take("h"))
                 items.append((to_str(text), hd))
             spec.update(title=to_str(title), items=items)

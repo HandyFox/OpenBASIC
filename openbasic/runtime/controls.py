@@ -148,13 +148,28 @@ class Control:
 class ButtonControl(Control):
     def __init__(self, host, win, key, spec, parent):
         super().__init__(host, win, key, spec, parent)
-        b = QPushButton(spec.get("text", ""), parent)
+        text = spec.get("text", "")
+        b = QPushButton(parent)
         b.setAutoDefault(False)
         b.clicked.connect(lambda: self.fire(spec.get("handler")))
         self.widget = b
-        fm = QFontMetrics(b.font())
-        dw = max(60, fm.horizontalAdvance(b.text().replace("&", "")) + 24)
-        self.rect = self.geometry_from_spec(dw, max(25, fm.height() + 10))
+        img = None
+        if text.lower().endswith(".bmp"):
+            # Just BASIC: a button whose label is a .bmp file shows the picture
+            import os
+            path = host.resolve_path(text)
+            if os.path.exists(path):
+                img = host.load_image_file(path)
+        if img is not None:
+            from PySide6.QtGui import QIcon, QPixmap
+            b.setIcon(QIcon(QPixmap.fromImage(img)))
+            b.setIconSize(img.size())
+            self.rect = self.geometry_from_spec(img.width() + 6, img.height() + 6)
+        else:
+            b.setText(text)
+            fm = QFontMetrics(b.font())
+            dw = max(22, fm.horizontalAdvance(text.replace("&", "")) + 12)
+            self.rect = self.geometry_from_spec(dw, max(24, fm.height() + 10))
 
     def command(self, text, lookup, newline):
         if not text.startswith("!"):
@@ -357,7 +372,11 @@ class ComboboxControl(Control):
         cb.setCurrentIndex(-1)
         cb.activated.connect(lambda _: self.fire(spec.get("handler")))
         self.widget = cb
-        self.rect = self.geometry_from_spec(150, 25)
+        # Just BASIC's height is the drop-down list's height; the box itself is one line
+        x, y, w, h = self.geometry_from_spec(150, 100)
+        fm = QFontMetrics(cb.font())
+        cb.setMaxVisibleItems(max(3, h // max(1, fm.lineSpacing() + 4)))
+        self.rect = (x, y, w, max(22, cb.sizeHint().height()))
 
     def other(self, op, args, cmd):
         cb = self.widget

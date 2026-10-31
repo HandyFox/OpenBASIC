@@ -118,3 +118,65 @@ end
     r, _ = run(str(p), [(300, lambda h: h.controls["#w.b"].widget.click())])
     assert r.status == "ended", r.error
     assert (tmp_path / "out.txt").read_text().split() == ["hello", "there", "clicked"]
+
+
+def test_graphics_segments_and_stacked_text(tmp_path):
+    """SEGMENT.BAS style: text lines stack, delsegment + redraw remove drawings."""
+    p = tmp_path / "seg.bas"
+    p.write_text('''nomainwin
+open "seg" for graphics as #g
+print #g, "place 10 25"
+print #g, "\\ONE"
+print #g, "flush"
+print #g, "\\TWO"
+print #g, "flush"
+print #g, "posxy x y"
+print #g, "delsegment 2"
+print #g, "redraw"
+open "out.txt" for output as #f
+print #f, x; " "; y
+close #f
+wait
+''')
+    snap = {}
+
+    def check(h):
+        v = h.windows["#g"].view
+        img = v.img
+        # ONE's row has dark pixels; TWO's row was deleted
+        def dark_in_row(y0, y1):
+            return any(img.pixelColor(x, y).lightness() < 100 for y in range(y0, y1) for x in range(10, 80))
+        snap["one"] = dark_in_row(10, 26)
+        snap["two"] = dark_in_row(30, 44)
+        h.windows["#g"].close()
+
+    r, _ = run(str(p), [(400, check)])
+    assert r.status == "ended", r.error
+    x, y = (tmp_path / "out.txt").read_text().split()
+    assert x == "10" and int(y) > 40  # the pen moved down two lines
+    assert snap["one"] and not snap["two"]
+
+
+def test_corner_anchored_buttons_stay_inside(tmp_path):
+    """CALC2.BAS style: LL buttons with a negative offset keep their spacing inside the window."""
+    p = tmp_path / "calc.bas"
+    p.write_text('''nomainwin
+button #c, " 0 ", [x], LL, 5, -12
+button #c, " 1 ", [x], LL, 5, 16
+WindowWidth = 150 : WindowHeight = 280
+open "Calc" for graphics_nsb_nf as #c
+wait
+[x] wait
+''')
+    geo = {}
+
+    def check(h):
+        w = h.windows["#c"]
+        b0, b1 = [c.widget.geometry() for c in w.controls.values()]
+        geo.update(b0=b0, b1=b1, h=w.area.height())
+        w.close()
+
+    r, _ = run(str(p), [(300, check)])
+    assert r.status == "ended", r.error
+    assert geo["b0"].bottom() < geo["h"]
+    assert geo["b0"].top() - geo["b1"].top() == 28

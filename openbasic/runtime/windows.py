@@ -11,9 +11,11 @@ from .graphics import GraphicsView
 from .style import css_color, default_font, parse_color, parse_font, program_palette
 
 IS_MAC = sys.platform == "darwin"
-# Just BASIC's WindowWidth/WindowHeight include the frame and title bar.
-FRAME_W = 16
-FRAME_H = 38
+# Just BASIC's WindowWidth/WindowHeight include the frame, title bar and menu bar.
+# Most programs were laid out on classic Windows, whose chrome was this size.
+FRAME_W = 8
+FRAME_H = 27
+MENU_H = 19
 
 
 class AbsoluteArea(QWidget):
@@ -23,24 +25,42 @@ class AbsoluteArea(QWidget):
         super().__init__(parent)
         self.items = []
 
-    def add(self, widget, rect, corner):
-        self.items.append((widget, rect, corner))
-        self._place(widget, rect, corner)
-
-    def _place(self, widget, rect, corner):
+    def _place(self, widget, rect, corner, shift=(0, 0)):
         x, y, w, h = rect
         W, H = self.width(), self.height()
         if corner in ("ur", "lr"):
-            x = W - x - w
+            x = W - x - w - shift[0]
         if corner in ("ll", "lr"):
-            y = H - y - h
+            y = H - y - h - shift[1]
         widget.setGeometry(int(x), int(y), int(w), int(h))
+
+    def relayout(self):
+        """Place corner-anchored controls. Controls anchored to the same corner keep their
+        spacing; if the program's offsets would push them past the window edge (common in
+        programs written for older Windows), the whole group slides back inside."""
+        W, H = self.width(), self.height()
+        for corner in ("ur", "ll", "lr"):
+            group = [(w, r) for w, r, c in self.items if c == corner]
+            if not group:
+                continue
+            sx = sy = 0
+            if corner in ("ur", "lr"):
+                sx = max(0, max(-(r[0]) for w, r in group))  # right edge beyond the window
+            if corner in ("ll", "lr"):
+                sy = max(0, max(-(r[1]) for w, r in group))
+            for w, r in group:
+                self._place(w, r, corner, (sx, sy))
+
+    def add(self, widget, rect, corner):
+        self.items.append((widget, rect, corner))
+        if corner == "ul":
+            self._place(widget, rect, corner)
+        else:
+            self.relayout()
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
-        for widget, rect, corner in self.items:
-            if corner != "ul":
-                self._place(widget, rect, corner)
+        self.relayout()
 
 
 class BasicWindow(QMainWindow):
@@ -121,8 +141,11 @@ class BasicWindow(QMainWindow):
 
         cw = max(60, settings["width"] - FRAME_W)
         ch = max(40, settings["height"] - FRAME_H)
-        if not IS_MAC and self.menuBar().actions():
-            pass  # menu bar sits inside the window height, like on Windows
+        if self.menuBar().actions():
+            # the menu bar comes out of the window height, as on Windows; our menu bar
+            # may be taller than the classic one, so grow the window by the difference
+            mh = self.menuBar().sizeHint().height()
+            ch = ch - MENU_H + (mh if not IS_MAC else 0)
         self.resize(cw, ch)
         if "nf" in self.flags or self.base == "dialog":
             self.setFixedSize(cw, ch)
@@ -137,7 +160,12 @@ class BasicWindow(QMainWindow):
 
     def add_control(self, spec, settings):
         raw = spec["raw"]
-        ext = raw.split(".", 1)[1] if "." in raw else raw.lstrip("#")
+        if "." in raw:
+            ext = raw.split(".", 1)[1]
+        else:
+            # "button #calc, ..." with no extension: Just BASIC allows it; give it a private name
+            self._anon = getattr(self, "_anon", 0) + 1
+            ext = f"_{spec['type']}{self._anon}"
         ckey = (self.key + "." + ext).lower()
         cls = CONTROL_CLASSES.get(spec["type"])
         if cls is None:

@@ -2,7 +2,7 @@
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPen, QBrush, QTransform
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPen, QBrush, QPicture, QTransform
 from PySide6.QtWidgets import QWidget
 
 from ..errors import BasicError
@@ -134,7 +134,10 @@ class GraphicsView(QWidget):
         self.font_ = QFont(pick_family("ms sans serif"))
         self.font_.setPixelSize(12)
         self.rule_xor = False
-        self.segment = 1
+        self.segments = [[]]
+        self.seg_base = 0
+        self.base_img = None
+        self.op_count = 0
 
     # ---------- painting ----------
     def ensure_size(self, w, h):
@@ -163,11 +166,52 @@ class GraphicsView(QWidget):
         return self.display if (self.sprite_mode and self.display is not None) else self.img
 
     def painter(self):
-        p = QPainter(self.img)
+        """A painter that records into the current segment; finish with _commit(p)."""
+        pic = QPicture()
+        p = QPainter(pic)
         p.setRenderHint(QPainter.Antialiasing, False)
-        if self.rule_xor:
-            p.setCompositionMode(QPainter.RasterOp_SourceXorDestination)
+        p._pic = pic
         return p
+
+    def _commit(self, p):
+        p.end()
+        item = ("pic", p._pic, self.rule_xor)
+        self._apply(item, self.img)
+        self.segments[-1].append(item)
+        self.op_count += 1
+        if self.op_count > 200000:
+            # keep memory bounded: older segments can no longer be deleted
+            self.base_img = self.img.copy()
+            self.segments = [[]]
+            self.seg_base = self.segment_no()
+            self.op_count = 0
+
+    @staticmethod
+    def _apply(item, img):
+        if item[0] == "fill":
+            img.fill(item[1])
+            return
+        ip = QPainter(img)
+        if item[2]:
+            ip.setCompositionMode(QPainter.RasterOp_SourceXorDestination)
+        ip.drawPicture(0, 0, item[1])
+        ip.end()
+
+    def segment_no(self):
+        return self.seg_base + len(self.segments)
+
+    def redraw(self):
+        if self.base_img is not None and self.base_img.size() == self.img.size():
+            self.img = self.base_img.copy()
+        else:
+            self.img.fill(QColor(255, 255, 255))
+            if self.base_img is not None:
+                pt = QPainter(self.img)
+                pt.drawImage(0, 0, self.base_img)
+                pt.end()
+        for seg in self.segments:
+            for item in seg:
+                self._apply(item, self.img)
 
     def _pen(self):
         pen = QPen(self.pen)
@@ -295,12 +339,18 @@ class GraphicsView(QWidget):
         args = words[1:]
         n = lambda c: self._nums(args, c, op)
         if op == "cls":
-            self.img.fill(self.clear_color)
+            self.img.fill(QColor(255, 255, 255))
+            self.segments = [[]]
+            self.seg_base = 0
+            self.base_img = None
+            self.op_count = 0
             self.display = None
         elif op == "fill":
             c = parse_color(" ".join(args))
             self.clear_color = c
-            self.img.fill(c)
+            item = ("fill", c)
+            self._apply(item, self.img)
+            self.segments[-1].append(item)
             self.display = None
         elif op == "color":
             self.pen = parse_color(" ".join(args))
@@ -332,28 +382,28 @@ class GraphicsView(QWidget):
             p.setPen(self._pen())
             p.setBrush(Qt.NoBrush)
             p.drawRect(r)
-            p.end()
+            self._commit(p)
         elif op in ("circle", "circlefilled"):
             r = n(1)[0]
             p = self.painter()
             p.setPen(self._pen())
             p.setBrush(QBrush(self.back) if op == "circlefilled" else Qt.NoBrush)
             p.drawEllipse(QPointF(self.x, self.y), r, r)
-            p.end()
+            self._commit(p)
         elif op in ("ellipse", "ellipsefilled"):
             w, h = n(2)
             p = self.painter()
             p.setPen(self._pen())
             p.setBrush(QBrush(self.back) if op == "ellipsefilled" else Qt.NoBrush)
             p.drawEllipse(QPointF(self.x, self.y), w / 2, h / 2)
-            p.end()
+            self._commit(p)
         elif op in ("pie", "piefilled"):
             w, h, a1, a2 = n(4)
             p = self.painter()
             p.setPen(self._pen())
             p.setBrush(QBrush(self.back) if op == "piefilled" else Qt.NoBrush)
             p.drawPie(QRectF(self.x - w / 2, self.y - h / 2, w, h), int(-a1 * 16), int(-a2 * 16))
-            p.end()
+            self._commit(p)
         elif op == "set":
             x, y = n(2)
             p = self.painter()
@@ -364,7 +414,7 @@ class GraphicsView(QWidget):
                 p.setPen(Qt.NoPen)
                 p.setBrush(self.pen)
                 p.drawEllipse(QPointF(x, y), self.size_ / 2, self.size_ / 2)
-            p.end()
+            self._commit(p)
             self.x, self.y = x, y
         elif op == "north":
             self.heading = 0.0
@@ -390,14 +440,23 @@ class GraphicsView(QWidget):
             return out
         elif op == "font":
             self.font_ = parse_font(" ".join(args))
-        elif op in ("flush", "discard", "redraw", "autoresize", "horizscrollbar", "vertscrollbar",
-                    "print", "stylebits", "trapclose", "resizehandler"):
-            if op == "flush":
-                self.segment += 1
-        elif op == "segment":
-            return {args[0]: self.segment} if args else None
+        elif op == "flush":
+            self.segments.append([])
+        elif op == "discard":
+            self.segments[-1] = []
+            self.redraw()
+        elif op == "redraw":
+            self.redraw()
         elif op == "delsegment":
+            k = int(self._nums(args, 1, op)[0]) - self.seg_base
+            if 1 <= k <= len(self.segments):
+                self.segments[k - 1] = []
+                self.redraw()
+        elif op in ("autoresize", "horizscrollbar", "vertscrollbar", "print", "stylebits", "trapclose",
+                    "resizehandler"):
             pass
+        elif op == "segment":
+            return {args[0]: self.segment_no()} if args else None
         elif op == "rule":
             mode = (args[0].lower() if args else "over")
             self.rule_xor = mode == "xor"
@@ -433,7 +492,7 @@ class GraphicsView(QWidget):
             x, y = float(args[1]), float(args[2])
             p = self.painter()
             p.drawImage(QPointF(x, y), bmp)
-            p.end()
+            self._commit(p)
         elif op == "bmpsave":
             if len(args) < 2:
                 raise BasicError("bmpsave needs a bitmap name and a file name")
@@ -554,20 +613,22 @@ class GraphicsView(QWidget):
         p = self.painter()
         p.setPen(self._pen())
         p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
-        p.end()
+        self._commit(p)
 
     def _text(self, text):
+        """Draw text at the pen. Every '\\' starts a new line, and the pen ends up
+        one line below the text, so consecutive text commands stack."""
         p = self.painter()
         p.setPen(self.pen)
         p.setFont(self.font_)
         fm = QFontMetrics(self.font_)
         y = self.y
-        for i, line in enumerate(text.split("\\")):
-            if i > 0:
-                y += fm.height()
-            p.drawText(QPointF(self.x, y), line)
-        p.end()
-        self.y = y + (fm.height() if text.endswith("\\") else 0)
+        for line in text.split("\\"):
+            if line:
+                p.drawText(QPointF(self.x, y), line)
+            y += fm.height()
+        self._commit(p)
+        self.y = y
 
     # ---------- sprites ----------
     def draw_sprites(self):

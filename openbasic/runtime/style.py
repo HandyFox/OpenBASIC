@@ -35,6 +35,11 @@ def parse_color(spec, default=None):
     if s in NAMED_COLORS:
         return QColor(*NAMED_COLORS[s])
     parts = s.replace(",", " ").split()
+    # Just BASIC ignores anything after a color name or the three numbers
+    if parts and parts[0] in NAMED_COLORS:
+        return QColor(*NAMED_COLORS[parts[0]])
+    if len(parts) > 3 and all(p.lstrip("-").replace(".", "", 1).isdigit() for p in parts[:3]):
+        parts = parts[:3]
     if len(parts) == 3 and all(p.lstrip("-").replace(".", "", 1).isdigit() for p in parts):
         r, g, b = (max(0, min(255, int(float(p)))) for p in parts)
         return QColor(r, g, b)

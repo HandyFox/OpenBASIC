@@ -158,6 +158,9 @@ class Parser:
             self.err("Expected a variable name", t)
         if self.peek().is_op("("):
             self.next()
+            nt = self.peek()
+            if nt.is_op(",") or nt.k in ("nl", "eof") or nt.is_op(":"):
+                return ("call", t.v, [])  # "info$(" with no closing paren
             args = []
             if not self.peek().is_op(")"):
                 args.append(self.expr())
@@ -206,7 +209,7 @@ class Parser:
                 self.next()
                 items.append(("sep", t.v))
                 continue
-            items.append(("e", self.expr()))
+            items.append(("e", self.expr(semi=False)))
         return items
 
     # --- input ---
@@ -230,7 +233,7 @@ class Parser:
                 prompt += "? " if False else ""
         elif self.peek().k in ("str",) or (self.peek().k == "id" and not self.peek(1).is_op(",", "(") and not self.peek(1).k in ("nl", "eof") and not self.peek(1).is_op(":")):
             # input expression; var  (expression prompt)
-            e = self.expr()
+            e = self.expr(semi=False)
             if self.accept_op(";") or self.accept_op(","):
                 prompt = e
             else:
@@ -348,6 +351,11 @@ class Parser:
 
     def st_titlebar(self, line):
         return S("titlebar", line, expr=self.expr())
+
+    def st_bmpsave(self, line):
+        name = self.expr()
+        self.expect_op(",")
+        return S("bmpsave", line, name=name, file=self.expr())
 
     def st_dump(self, line):
         return None
@@ -636,13 +644,13 @@ class Parser:
         return S("notice", line, expr=self.expr())
 
     def st_confirm(self, line):
-        e = self.expr()
+        e = self.expr(semi=False)
         if not (self.accept_op(";") or self.accept_op(",")):
             self.err("Expected ';' and a variable after CONFIRM")
         return S("confirm", line, expr=e, target=self.lvalue())
 
     def st_prompt(self, line):
-        e = self.expr()
+        e = self.expr(semi=False)
         if not (self.accept_op(";") or self.accept_op(",")):
             self.err("Expected ';' and a variable after PROMPT")
         return S("prompt", line, expr=e, target=self.lvalue())
@@ -851,8 +859,17 @@ class Parser:
         return args
 
     # ---------- expressions ----------
-    def expr(self):
-        return self.e_or()
+    def expr(self, semi=True):
+        e = self.e_or()
+        if semi and self.peek().is_op(";"):
+            # Just BASIC lets ';' join values into a string: a$ = "x"; n; "y"
+            parts = [e]
+            while self.accept_op(";"):
+                if self.at_end() or self.peek().is_op(",", ")"):
+                    break
+                parts.append(self.e_or())
+            e = ("concat", parts)
+        return e
 
     def e_or(self):
         l = self.e_and()
@@ -950,6 +967,10 @@ class Parser:
         if t.k == "id":
             if self.peek().is_op("("):
                 self.next()
+                # Just BASIC accepts "items$(" for an array argument with no closing paren
+                nt = self.peek()
+                if nt.is_op(",") or nt.k in ("nl", "eof") or nt.is_op(":"):
+                    return ("call", t.v, [])
                 args = []
                 if not self.peek().is_op(")"):
                     args.append(self.arg_expr())

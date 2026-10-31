@@ -134,6 +134,7 @@ class QtHost(Host):
             win.show()
         win.raise_()
         win.activateWindow()
+        self.app.processEvents()  # let the window reach its real size before drawing ("home")
         if win.base == "graphics":
             win.view.ensure_size(win.view.width(), win.view.height())
 
@@ -441,6 +442,10 @@ class QtHost(Host):
     def unload_bmp(self, name):
         self.bitmaps.pop(name.lower(), None)
         self.sprite_frames.pop(name.lower(), None)
+
+    def save_bmp(self, name, path):
+        if not self.get_bitmap(name).save(path, "BMP"):
+            raise BasicError(f"Couldn't save bitmap to {path}")
 
     def get_bitmap(self, name):
         img = self.bitmaps.get(name.lower())

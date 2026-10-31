@@ -56,10 +56,11 @@ class BFile:
     def write(self, text):
         if self.mode == "input":
             raise BasicError(f"{self.handle} was opened for INPUT; it can't be written to")
-        if self.mode in ("output", "append", "binary"):
-            self.f.write(_encode(text.replace("\n", NEWLINE) if self.mode != "binary" else text))
+        if self.mode in ("output", "append"):
+            self.f.write(_encode(text.replace("\n", NEWLINE)))
         else:
-            raise BasicError(f"Use FIELD and PUT to write to random file {self.handle}")
+            # binary and random files: write the text as-is at the current position
+            self.f.write(text.encode("latin-1", "replace"))
         nl = text.rfind("\n")
         self.col = len(text) - nl - 1 if nl >= 0 else self.col + len(text)
 

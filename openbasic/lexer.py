@@ -25,10 +25,11 @@ class Tok:
 
 _ID = re.compile(r"[A-Za-z][A-Za-z0-9_.]*\$?")
 _NUM = re.compile(r"(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?")
-_HANDLE = re.compile(r"#([A-Za-z][A-Za-z0-9_.]*\$(?:\.[A-Za-z0-9_.]+)?|[A-Za-z][A-Za-z0-9_.]*|\d+)")
+_HANDLE = re.compile(r"#([A-Za-z][A-Za-z0-9_.]*\$(?:\.[A-Za-z0-9_.]+)?|[A-Za-z0-9][A-Za-z0-9_.]*)")
 _WINCON = re.compile(r"_[A-Za-z][A-Za-z0-9_]*")
 _LABEL = re.compile(r"\[([^\]\s\[]+)\]")
 _HEX = re.compile(r"&[hH]([0-9A-Fa-f]+)")
+_AMPWORD = re.compile(r"&[A-Za-z0-9_]+")
 _TWO = ("<=", ">=", "<>", "=<", "=>", "><")
 _ONE = "+-*/^=<>(),;:|?"
 
@@ -94,6 +95,15 @@ def tokenize(src):
                     line_had_tokens = True
                     continue
                 raise BasicSyntaxError("Malformed handle after '#'", ln)
+            if c == "&" and i + 1 < n and text[i + 1].isalnum():
+                # &Colors: unquoted menu text (or &HFF hex)
+                m = _AMPWORD.match(text, i)
+                if not _HEX.fullmatch(m.group(0)):
+                    toks.append(Tok("str", m.group(0), ln, i))
+                    i = m.end()
+                    stmt_start = False
+                    line_had_tokens = True
+                    continue
             if c == "&":
                 m = _HEX.match(text, i)
                 if m:

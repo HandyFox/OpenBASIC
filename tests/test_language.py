@@ -336,3 +336,32 @@ def test_unknown_statement_message():
     with pytest.raises(BasicSyntaxError) as e:
         Interpreter("frobnicate 1, 2", TestHost())
     assert "Unknown statement 'frobnicate'" in e.value.msg
+
+
+def test_just_basic_example_syntax():
+    """Syntax found in the Just BASIC example programs."""
+    src = '''
+dim name$(5)
+name$(1) = "Ann"
+a$ = "x"; 5; "y"
+rainbow$ = 1;" ";2
+print a$; " "; rainbow$
+print date$(0); " "; date$("01/02/1901")
+print len(name$(1))
+end
+'''
+    assert out(src) == "x5y 1 2\n01/01/1901 1\n3\n"
+    # menu text without quotes, numeric handles, arrays passed as "arr$(" with no ')'
+    Interpreter('menu #1, &Colors, &red, [r], &blue, [r]\n'
+                'checkbox #1.cb, "I am a checkbox", [r], [r], 10, 10, 130, 20\n'
+                'listbox #1.lb, name$(, [r], 10, 35, 160, 120\n'
+                'files "c:\\\\", "*.*", info$(\n'
+                'open DefaultDir$;"\\\\x.txt" for output as #f\n'
+                'notice "You picked "; a$\n'
+                'bmpsave "drawing", "x.bmp"\n'
+                '[r] wait\n', TestHost())
+
+
+def test_handler_label_in_main_for_controls_declared_in_sub():
+    Interpreter('call makeWin\nwait\n[plot]\nwait\nsub makeWin\n'
+                'button #w.b, "Plot", [plot], UL, 10, 10\nopen "x" for window as #w\nend sub\n', TestHost())

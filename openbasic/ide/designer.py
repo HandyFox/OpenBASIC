@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, 
 from ..parser import parse
 from ..runtime.style import parse_font, program_palette
 
-FRAME_W, FRAME_H = 16, 38
+FRAME_W, FRAME_H = 8, 27
 GRID = 5
 
 TYPES = [

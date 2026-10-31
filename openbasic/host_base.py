@@ -124,6 +124,9 @@ class Host:
     def unload_bmp(self, name):
         pass
 
+    def save_bmp(self, name, path):
+        pass
+
     def playwave(self, path, mode):
         pass
 

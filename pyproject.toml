@@ -21,6 +21,7 @@ classifiers = [
 
 [project.optional-dependencies]
 standalone = ["pyinstaller>=6"]
+serial = ["pyserial>=3.5"]
 dev = ["pytest>=7", "pyinstaller>=6"]
 
 [project.gui-scripts]
